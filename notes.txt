@@ -1,9 +1,0 @@
-Ask Alexei what the norm is for handling terminals that are too small or if people resize mid-program, or if you even care for this
-
-how does hard mode work if you have two of the SAME letter revealed? Do you have to use both in the word??
-    it may be that greens must be used in the same spot they were found, in which case you must check for inline matches against previous row
-    maybe make a Vec<[Letter; 5]> for guess colours and match against last()?
-    yellows would be trickier. As in, if there are two of the same letter revealed, the guess word would also need to have two, not just one
-    Those are technically two separate problems:
-    1. Ensuring that green reveals are matched in the guess in the same position
-    2. Ensuring that multiple matches for the same letter in last guess have the same number of matches in the new guess
