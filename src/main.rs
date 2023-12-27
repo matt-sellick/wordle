@@ -1,20 +1,23 @@
 mod valid_guesses;
 mod secret_words;
 
-use wordle::get_input;
-use wordle::{Board, Word};
-use std::process;
+use wordle::{Board, Word, check_terminal};
 use crate::valid_guesses::ValidGuesses;
 use crate::secret_words::SecretWords;
 
-// a command-line reconstruction of Wordle.
-// tried to be faithful to original game! Only thing is it does not do is track wins.
-// randomly selects a secret word on every launch.
+// A TUI reconstruction of Wordle written by Matt Sellick
+// Randomly selects a secret word on every launch
+// Saves a text file to the working directory when the game ends to store stats
 
 fn main() {
 
+    // check terminal size
+    match check_terminal() {
+        Ok(_) => (),
+        Err(error) => panic!("{error}"), // prints "please resize terminal" message
+    }
+
     // game setup
-    println!("\n     W O R D L E");
     let valid_guesses = ValidGuesses::load().contents;
     let secret_word = match Word::try_new(SecretWords::load().choose_secret(), &valid_guesses) { // note that secret words must also be in the valid guess list
         Ok(w) => w,
@@ -22,21 +25,39 @@ fn main() {
     };
 
     // for testing:
-    // println!("Secret word is: {:?}", secret_word);
+    // println!("\nSecret word is: {}", secret_word.contents());
+    // std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // init game board
+    // init game board, moving into alternate screen
     let mut game_board = Board::new(secret_word); // board owns secret word
-    game_board.draw(0);
+    game_board.draw();
+    game_board.print_msg("press ` to exit, 1 for hard mode");
 
     // turn loop
     for turn in 1..=6 as usize {
+
+        // update turn in Board
+        game_board.turn = turn;
+
         // get user input
-        println!("\nEnter your guess:");
         loop {
-            let guess = match Word::try_new(get_input(), &valid_guesses) { // asks for a guess word
-                Ok(g) => g,
+            let guess = match Word::try_new(game_board.get_input(), &valid_guesses) { // asks for a guess word
+                Ok(g) => {
+                    if game_board.hard { // if you're in hard mode, make sure it's a legal guess before binding
+                        let (pass, violations) = game_board.hard_check(&g);
+                        if pass {
+                            g
+                        } else {
+                            let error = format!("Guess must contain {:?}", violations); // uses debug formatting but works well!
+                            game_board.print_msg(&error);
+                            continue;
+                        }
+                    } else { // normal mode
+                        g
+                    }
+                },
                 Err(e) => {
-                    println!("{}", e);
+                    game_board.print_msg(e);
                     continue;
                 },
             };
@@ -45,15 +66,17 @@ fn main() {
         }
         
         // display the board
-        game_board.draw(turn);
+        game_board.draw();
 
         // check if the guess is right
         if game_board.check_guess() {
-            game_board.win_message(turn);
-            process::exit(0);
+            game_board.win = true;
+            break;
         }
     }
-    
-    // if you finish six turns without getting it right ...
-    game_board.win_message(7);
+
+    // game end
+    game_board.win_message(); // display win message and wait for key press
+    game_board.stats(); // display stats and wait for key press
+    drop(game_board); // return to main screen
 }
