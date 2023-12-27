@@ -1,7 +1,7 @@
 mod valid_guesses;
 mod secret_words;
 
-use wordle::{Board, Word, check_terminal};
+use wordle::{Board, Word};
 use crate::valid_guesses::ValidGuesses;
 use crate::secret_words::SecretWords;
 
@@ -9,13 +9,12 @@ use crate::secret_words::SecretWords;
 // Randomly selects a secret word on every launch
 // Saves a text file to the working directory when the game ends to store stats
 
+// May display slightly left-of-centre?
+
 fn main() {
 
     // check terminal size
-    match check_terminal() {
-        Ok(_) => (),
-        Err(error) => panic!("{error}"), // prints "please resize terminal" message
-    }
+    wordle::enforce_terminal();
 
     // game setup
     let valid_guesses = ValidGuesses::load().contents;
@@ -28,10 +27,10 @@ fn main() {
     // println!("\nSecret word is: {}", secret_word.contents());
     // std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // init game board, moving into alternate screen
-    let mut game_board = Board::new(secret_word); // board owns secret word
+    // initialize game board, moving into alternate screen
+    let mut game_board = Board::new(secret_word);
+    game_board.welcome();
     game_board.draw();
-    game_board.print_msg("press ` to exit, 1 for hard mode");
 
     // turn loop
     for turn in 1..=6 as usize {
@@ -44,13 +43,12 @@ fn main() {
             let guess = match Word::try_new(game_board.get_input(), &valid_guesses) { // asks for a guess word
                 Ok(g) => {
                     if game_board.hard { // if you're in hard mode, make sure it's a legal guess before binding
-                        let (pass, violations) = game_board.hard_check(&g);
-                        if pass {
-                            g
-                        } else {
-                            let error = format!("Guess must contain {:?}", violations); // uses debug formatting but works well!
-                            game_board.print_msg(&error);
-                            continue;
+                        match game_board.hard_check(&g) {
+                            Ok(_) => g,
+                            Err(error) => {
+                                game_board.print_msg(&error);
+                                continue;
+                            },
                         }
                     } else { // normal mode
                         g

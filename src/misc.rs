@@ -147,3 +147,47 @@ pub fn update_keyboard(&mut self) { // formerly part of Board impl
         self.keyboard.guessed_letters.entry(letters).and_modify(|count| *count += 1).or_insert(1);
     }
 }
+
+// old implementation
+pub fn hard_check(&self, guess: &Word) -> (bool, Vec<char>) {
+    // returns false, and the violating letter(s) (for display) if the word doesn't pass the hard mode check
+    // word must be passed in because you want it to fail *before* entering the board's guess list
+
+    let mut pass: bool = true;
+    let mut violations: Vec<char> = Vec::new();
+
+    // check passed-in word against successful hits (i.e. in keyboard)
+    // make sure that the guess word contains all the "revealed" entries in the hashmap
+    let mut revealed: HashMap<char, Letter> = self.keyboard.guessed_letters.clone();
+    revealed.retain(|_, l| { // this will trim down revealed to contain only revealed letters, not greys
+        match l {
+            Letter::Green => true,
+            Letter::Yellow => true,
+            Letter::Grey => false,
+        }
+    });
+
+    // if a revealed letter is not found in the guess, will return a test "failure" and the offending letter
+    for letters in revealed.keys() {
+        if !guess.contents().contains(*letters) {
+            pass = false;
+            violations.push(*letters);
+        }
+    }
+    
+    (pass, violations)
+}
+
+/*
+// I'm proud of this countdown so I'm just commenting it out
+// wait a few seconds
+let countdown_row = row + help.len() as u16 + 3;
+let countdown_message = "Starting in ";
+for seconds in (0..=5).rev() {
+    write!(self.screen, "{}{countdown_message}{seconds}",
+        cursor::Goto(col + 10 - (countdown_message.len() as u16 / 2), countdown_row),
+    ).unwrap();
+    self.screen.flush().unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+}        
+*/

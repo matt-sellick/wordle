@@ -1,3 +1,4 @@
+use core::panic;
 use std::io::{self, BufRead, Write, Stdout, stdout, stdin};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -59,14 +60,15 @@ enum Letter {
 }
 
 pub struct Board {
-    pub hard: bool,
+    pub hard: bool, // hard mode?
+    pub contrast: bool, // high-contrast mode?
+    pub win: bool, // did you win?
     pub turn: usize, // what turn is it? (turn zero is for board setup)
-    pub guesses: Vec<Word>, // all words that have been guessed
     pub secret_word: Word,
+    pub guesses: Vec<Word>, // all words that have been guessed
     keyboard: Keyboard, // holds info about what letters have been guessed
     screen: RawTerminal<AlternateScreen<Stdout>>, // go into alternate screen in raw mode when board is constructed
     coord: (u16, u16), // column, row of board top left corner (where W O R D L E is printed) and column of left board border
-    pub win: bool, // did you win?
 }
 
 impl Board {
@@ -85,14 +87,98 @@ impl Board {
 
         Board {
             hard: false,
+            contrast: false,
+            win: false,
             turn: 0,
-            guesses: vec![],
             secret_word,
+            guesses: vec![],
             keyboard: Keyboard::initialize(),
             screen: stdout().into_alternate_screen().unwrap().into_raw_mode().unwrap(),
             coord: (col, row),
-            win: false,
         }
+    }
+
+    pub fn welcome(&mut self) {
+        let (col, row) = self.coord;
+
+        let mut how_to_display = false; // whether or not the "how-to" is what's on screen
+        'outer: loop {
+            // print game title
+            write!(self.screen, "{}{}{}W O R D L E", // should print in the same place it will be for the board
+                termion::clear::All,
+                cursor::Hide,
+                cursor::Goto(col + 5, row)
+            ).unwrap();
+
+            // print key commands
+            let help = "Guess by typing a word\nand pressing Enter\n\nPress ` to Exit,\n1 for Hard Mode,\n2 for High Contrast\n3 for How To Play\n\nPress Enter to Start Game";
+            let help_row = row + 2;
+            for (line, message) in help.lines().enumerate() {
+                write!(self.screen, "{}{message}",
+                    cursor::Goto(col + 10 - (message.len() as u16 / 2), help_row + line as u16),
+                ).unwrap();
+            }
+            self.screen.flush().unwrap();
+
+            // press Enter to start; allow activating high contrast/hard mode before game start
+            let input = stdin();
+            for key in input.keys() {
+                match key.unwrap() {
+                    Key::Char('`') => {
+                        self.print_welcome_msg(&format!("\r{}", termion::clear::CurrentLine));
+                        self.print_welcome_msg("Exiting");
+                        std::thread::sleep(std::time::Duration::from_millis(555));
+                        panic!("exiting program"); // for debugging
+                    },
+                    Key::Char('1') => { // enable hard mode
+                        self.print_welcome_msg(&format!("\r{}", termion::clear::CurrentLine));
+                        if self.hard { // if it's already enabled
+                            self.print_welcome_msg("Hard mode already enabled");
+                        } else if self.guesses.is_empty() { // enable only if you haven't guessed yet
+                            self.hard = true;
+                            self.print_welcome_msg("Hard mode enabled");
+                        } else {
+                            self.print_welcome_msg("Cannot enable hard mode"); // actual message is "Hard mode can only be enabled at the start of a round" but that's long and could make terminal panic  
+                        }
+                    },
+                    Key::Char('2') => {
+                        self.print_welcome_msg(&format!("\r{}", termion::clear::CurrentLine));
+                        if self.contrast {
+                            self.print_welcome_msg("High contrast mode already enabled");
+                        } else if self.guesses.is_empty() { // only if you haven't guessed yet (else you'd have to redraw coloured rows)
+                            self.contrast = true;
+                            self.print_welcome_msg("High contrast mode enabled");
+                        } else {
+                            self.print_welcome_msg("Cannot enable high contrast mode");
+                        }
+                    },
+                    Key::Char('3') => {
+                        if !how_to_display {
+                            how_to_display = true;
+                            self.print_welcome_msg(&format!("{}", termion::clear::All));
+                            let how_to = "HOW TO PLAY\n\nGuess the Wordle in 6 tries\nEach guess must be a valid 5-letter word\n\nThe colour of the tiles will\nchange to show how close\nyour guess was to the word";
+                            let how_to_row = row + 2;
+                            for (line, message) in how_to.lines().enumerate() {
+                                write!(self.screen, "{}{message}",
+                                    cursor::Goto(col + 10 - (message.len() as u16 / 2), how_to_row + line as u16),
+                                ).unwrap();
+                            }
+                        } else { // if how-to is already on-screen
+                            how_to_display = false;
+                            continue 'outer; // this will send you back to the top of the outer loop and redraw menu
+                        }
+                        self.screen.flush().unwrap();
+                    },
+                    Key::Char('\n') => {
+                        break 'outer; // pressing enter breaks whole loop and moves on
+                    },
+                    _ => (),
+                }
+            }
+        }
+
+        write!(self.screen, "{}", cursor::Show).unwrap();
+        self.screen.flush().unwrap();
     }
 
     pub fn check_guess(&self) -> bool {
@@ -103,7 +189,7 @@ impl Board {
         }
     }
 
-    fn check_matches(&self, guess: &Word) -> [Letter; 5] { // currently allows checking against guess you specify, not just most recent
+    fn check_matches(&self, guess: &Word) -> [Letter; 5] { // allows checking against guess you specify, not just most recent
         let mut match_counter: HashMap<char, usize> = HashMap::new();
         let mut letter_colours: [Letter; 5] = [Letter::Grey; 5];
         let mut secret_word: [char; 5] = ['_'; 5];
@@ -148,11 +234,19 @@ impl Board {
             to_print = format!("{to_print}| ");
             match colours[index] {
                 Letter::Green => {
-                    to_print = format!("{}{} ", to_print, String::from(letter).bright_green());
+                    if self.contrast {
+                        to_print = format!("{}{} ", to_print, String::from(letter).truecolor(245, 121, 58));                        
+                    } else {
+                        to_print = format!("{}{} ", to_print, String::from(letter).bright_green());
+                    }
                     self.keyboard.guessed_letters.insert(letter, Letter::Green); // updating keyboard colours
                 },
                 Letter::Yellow => {
-                    to_print = format!("{}{} ", to_print, String::from(letter).bright_yellow());
+                    if self.contrast {
+                        to_print = format!("{}{} ", to_print, String::from(letter).truecolor(133, 192, 249));
+                    } else {
+                        to_print = format!("{}{} ", to_print, String::from(letter).bright_yellow());
+                    }
                     // if the letter is not already in the keyboard as yellow or green
                     if let &Letter::Grey = self.keyboard.guessed_letters.get(&letter).unwrap_or(&Letter::Grey) {
                         self.keyboard.guessed_letters.insert(letter, Letter::Yellow);    
@@ -196,7 +290,7 @@ impl Board {
 
             // print full keyboard
             let keyboard_top = row + 17; // row of top of keyboard
-            write!(self.screen, "{}", self.keyboard.format((col, keyboard_top))).unwrap();
+            write!(self.screen, "{}", self.keyboard.format((col, keyboard_top), self.contrast)).unwrap();
 
             // flush screen buffer
             self.screen.flush().unwrap();
@@ -212,7 +306,7 @@ impl Board {
 
             // update keyboard display
             let keyboard_top = row + 17;
-            write!(self.screen, "{}", self.keyboard.format((col, keyboard_top))).unwrap();
+            write!(self.screen, "{}", self.keyboard.format((col, keyboard_top), self.contrast)).unwrap();
 
             // move cursor to appropriate board row top prep for scrolling coloured guess
             let guess_row = row + 1;
@@ -246,14 +340,32 @@ impl Board {
         let input = stdin();
         for key in input.keys() {
             match key.unwrap() {
-                Key::Char('`') => panic!("exiting program"), // for debugging
+                Key::Char('`') => {
+                    self.print_msg(&format!("\r{}", termion::clear::CurrentLine));
+                    self.print_msg("Exiting");
+                    std::thread::sleep(std::time::Duration::from_millis(555));
+                    panic!("exiting program"); // for debugging
+                },
                 Key::Char('1') => { // enable hard mode
                     self.print_msg(&format!("\r{}", termion::clear::CurrentLine));
-                    if self.guesses.is_empty() { // only if you haven't guessed yet
+                    if self.hard { // if it's already enabled
+                        self.print_msg("Hard mode already enabled");
+                    } else if self.guesses.is_empty() { // enable only if you haven't guessed yet
                         self.hard = true;
                         self.print_msg("Hard mode enabled");
                     } else {
-                        self.print_msg("Cannot enable hard mode"); // actual message is "Hard mode can only be enabled at the start of a round" but that's long and could make terminal panic
+                        self.print_msg("Cannot enable hard mode"); // actual message is "Hard mode can only be enabled at the start of a round" but that's long and could make terminal panic  
+                    }
+                },
+                Key::Char('2') => {
+                    self.print_msg(&format!("\r{}", termion::clear::CurrentLine));
+                    if self.contrast {
+                        self.print_msg("High contrast mode already enabled");
+                    } else if self.guesses.is_empty() { // only if you haven't guessed yet (else you'd have to redraw coloured rows)
+                        self.contrast = true;
+                        self.print_msg("High contrast mode enabled");
+                    } else {
+                        self.print_msg("Cannot enable high contrast mode");
                     }
                 },
                 Key::Char('\n') => {
@@ -297,33 +409,74 @@ impl Board {
         word
     }
 
-    pub fn hard_check(&self, guess: &Word) -> (bool, Vec<char>) {
-        // returns false, and the violating letter(s) (for display) if the word doesn't pass the hard mode check
-        // word must be passed in because you want it to fail *before* entering the board's guess list
+    pub fn hard_check(&self, attempt: &Word) -> Result<(), String> {
+        // returns Ok if an attempted hard mode guess passes, Err (a message + char) if it violates the rules
 
-        let mut pass: bool = true;
-        let mut violations: Vec<char> = Vec::new();
+        /*
+            HARD MODE RULES
+            Green reveals must be reused in the SAME SPOT
+            Yellow reveals must be reused in the word
+            In other words, correct positions must be reused exactly and overall letters revealed must be reused in the same or higher number
 
-        // check passed-in word against successful hits (i.e. in keyboard)
-        // make sure that the guess word contains all the "revealed" entries in the hashmap
-        let mut revealed: HashMap<char, Letter> = self.keyboard.guessed_letters.clone();
-        revealed.retain(|_, l| { // this will trim down revealed to contain only revealed letters, not greys
-            match l {
-                Letter::Green => true,
-                Letter::Yellow => true,
-                Letter::Grey => false,
-            }
-        });
+            Wordle will tell you (in this order) if:
+            1. you have a green reveal and you didn’t use it in the right spot or didn’t use it at all
+	            — “Xth letter must be L”
+            2. you have a yellow reveal that you didn’t use
+	            — “Guess must contain L”
+            In both cases it will only tell you the first error you made
+        */
 
-        // if a revealed letter is not found in the guess, will return a test "failure" and the offending letter
-        for letters in revealed.keys() {
-            if !guess.contents().contains(*letters) {
-                pass = false;
-                violations.push(*letters);
+        if self.turn <= 1 {
+            return Ok(()); // you don't need to check before turn 2 (also this function will panic on turn 1 without this)
+        }
+
+        // check for use of green matches:
+        // "for each letter of the previous guess, if that letter is in the same spot in the secret word (i.e. green match) it must also be used in that spot in the next attempt"
+        for (index, letter) in self.guesses.last().unwrap().contents().char_indices() {
+            if self.secret_word.contents().chars().nth(index).unwrap() == letter && attempt.contents().chars().nth(index).unwrap() != letter {
+                match index + 1 {
+                    1 => return Err(format!("1st letter must be {letter}")),
+                    2 => return Err(format!("2nd letter must be {letter}")),
+                    3 => return Err(format!("3rd letter must be {letter}")),
+                    4 => return Err(format!("4th letter must be {letter}")),
+                    5 => return Err(format!("5th letter must be {letter}")),
+                    _ => (),
+                }
             }
         }
-        
-        (pass, violations)
+
+        // check for yellow matches: "for each letter of the previous guess, ..."
+        for letter in self.guesses.last().unwrap().contents().chars() {
+            
+            // "... count how many of each letter in previous guess is ...""
+            let in_guess: usize = self.guesses.last().unwrap().contents().chars().filter(|c| *c == letter).count();
+            let in_secret: usize = self.secret_word.contents().chars().filter(|c| *c == letter).count();
+            let in_attempt: usize = attempt.contents().chars().filter(|c| *c == letter).count();
+
+            // "for each letter in the previous guess, the attempt must contain at least as many of that letter as are in the last guess or in the secret word, whichever has fewer"
+            if in_attempt < std::cmp::min(in_guess, in_secret) {
+                return Err(format!("Guess must contain {letter}"));
+            }
+
+            /*
+                To see why this works:
+                E R R O R -> last guess     M A R R Y (secret word)
+                Error would get two matches (Y & G), which means you need to have two in your next attempt
+                If the words were reversed it would still be true, Marry would have a green and a yellow and your next guess would have to include them
+                If you chose a word with different R positioning and all you got was yellows, it would still hold true.
+            */
+
+            /*
+                there is an ever so slight bug where if you've revealed the first letter as green, but there's another
+                of that letter revealed as yellow later in the word, a different yellow letter before it will not get
+                "error priority". e.g. "T R E A T", where the letter 1 is green and 4/5 are yellow, if you type "TRAPS",
+                the message will be "Guess must contain T". Which I think is fine, because the end result is the same
+                I'm pretty sure real Wordle displays the "first" error in the word, but this is an extremely fringe case
+                with no real effect on the outcome
+            */
+        }
+
+        Ok(())
     }
 
     pub fn scroll(&mut self, print: &str, duration: u64) {
@@ -375,15 +528,27 @@ impl Board {
         press_to_continue();
     }
 
-    pub fn print_msg(&mut self, error: &str) { // print errors centred under the board but restores cursor after
+    pub fn print_msg(&mut self, msg: &str) { // print errors centred under the board but restores cursor after
         let (col, row) = self.coord;
         let message_row = row + 16;
         let (return_col, return_row) = self.screen.cursor_pos().unwrap(); // cursor position before jumping
         write!(self.screen, "{}{}{}",
-            cursor::Goto(col + 10 - (error.len() as u16 / 2), message_row),
-            error,
+            cursor::Goto(col + 10 - (msg.len() as u16 / 2), message_row),
+            msg,
             cursor::Goto(return_col, return_row),
             // note that zsh doesn't like cursor Save/Hide so needed to use Goto()
+        ).unwrap();
+        self.screen.flush().unwrap();
+    }
+
+    pub fn print_welcome_msg(&mut self, msg: &str) { // version for the welcome screen
+        let (col, row) = self.coord;
+        let message_row = row + 11;
+        let (return_col, return_row) = self.screen.cursor_pos().unwrap(); // cursor position before jumping
+        write!(self.screen, "{}{}{}",
+            cursor::Goto(col + 10 - (msg.len() as u16 / 2), message_row),
+            msg,
+            cursor::Goto(return_col, return_row),
         ).unwrap();
         self.screen.flush().unwrap();
     }
@@ -520,11 +685,19 @@ impl Board {
                 bar.push('|');
             }
             if line + 1 == self.turn && self.win { // print the "turn row" green, unless failed
-                write!(self.screen, "{}{}{bar} {count}{}",
+                if self.contrast {
+                    write!(self.screen, "{}{}{bar} {count}{}",
+                    cursor::Goto(bar_col, graph_row + line as u16),
+                    color::Fg(color::Rgb(245, 121, 58)),
+                    color::Fg(color::Reset)
+                ).unwrap();
+                } else {
+                    write!(self.screen, "{}{}{bar} {count}{}",
                     cursor::Goto(bar_col, graph_row + line as u16),
                     color::Fg(color::LightGreen),
                     color::Fg(color::Reset)
                 ).unwrap();
+                }
             } else {
                 write!(self.screen, "{}{bar} {count}",
                     cursor::Goto(bar_col, graph_row + line as u16)
@@ -566,8 +739,8 @@ impl Board {
         }
         std::thread::sleep(Duration::from_secs(2)); // wait a couple seconds
 
-        // "press any key to continue"
-        let exit_message = "Press any key to continue";
+        // "press any key to exit"
+        let exit_message = "Press any key to exit";
         let press_message_row = row + 12;
         write!(self.screen,
             "{}{}",
@@ -598,7 +771,7 @@ impl Keyboard {
         }
     }
 
-    fn format(&self, coord: (u16, u16)) -> String {
+    fn format(&self, coord: (u16, u16), contrast: bool) -> String { // have to pass in some board struct fields, ah well
         // coord in this case is where the keyboard starts, not the game board
         let qwerty_sequence: String = String::from(" _QWERTYUIOP __ASDFGHJKL ____ZXCVBNM");
         let mut _buf = String::new();
@@ -612,8 +785,20 @@ impl Keyboard {
                 _buf = format!("{_buf} "); // for keyboard alignment
             } else { // if it's a normal letter ...
                 match self.guessed_letters.get(&chars) { // ... print it depending on its guess "status"
-                    Some(Letter::Green) => _buf = format!("{_buf}{} ", chars.to_string().bright_green()),
-                    Some(Letter::Yellow) => _buf = format!("{_buf}{} ", chars.to_string().bright_yellow()),
+                    Some(Letter::Green) => {
+                        if contrast {
+                            _buf = format!("{_buf}{} ", chars.to_string().truecolor(245, 121, 58));
+                        } else {
+                            _buf = format!("{_buf}{} ", chars.to_string().bright_green());
+                        }
+                    },
+                    Some(Letter::Yellow) => {
+                        if contrast {
+                            _buf = format!("{_buf}{} ", chars.to_string().truecolor(133, 192, 249));
+                        } else {
+                            _buf = format!("{_buf}{} ", chars.to_string().bright_yellow());
+                        }
+                    }
                     Some(Letter::Grey) => _buf = format!("{_buf}{} ", chars.to_string().truecolor(10, 10, 10)),
                     None => _buf = format!("{_buf}{chars} "), // if that letter has not been guessed, print it normally
                 }
@@ -634,11 +819,28 @@ pub fn press_to_continue() {
     }
 }
 
-pub fn check_terminal() -> Result<(), &'static str> { // checks if terminal window is big enough to accommodate game
+fn check_terminal() -> Result<(), &'static str> { // checks if terminal window is big enough to accommodate game
     let (width, height) = termion::terminal_size().unwrap();
     if width < 50 || height < 22 {
-        return Err("Please resize terminal to at least 50 x 22");
+        return Err("Please resize the terminal to at least 50 x 22\nPress Enter to retry");
     } else {
         return Ok(());
+    }
+}
+
+pub fn enforce_terminal() {
+    // enforces terminal size - this loops until terminal is the proper size. Called on program start, before entering alt screen
+    while let Err(error) = check_terminal() {
+        println!("{error}"); // prints "please resize terminal" message
+        let input = stdin();
+        for key in input.keys() {
+            match key.unwrap() {
+                Key::Char('\n') => {
+                    break; // pressing Enter breaks the for and lets the while let try again
+                },
+                Key::Char('`') => panic!("Exiting"), // mostly for debugging
+                _ => (),
+            }
+        }
     }
 }
