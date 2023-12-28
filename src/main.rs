@@ -10,6 +10,7 @@ use crate::secret_words::SecretWords;
 // Saves a text file to the working directory when the game ends to store stats
 
 // May display slightly left-of-centre?
+// the RGB colours don't work in terminal-- something about non-ANSI colours. Just pick ANSI colours
 
 fn main() {
 

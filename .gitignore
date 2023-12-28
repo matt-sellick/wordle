@@ -1,5 +1,1 @@
 /target
-
-*.txt
-/src/misc.rs
-/src/tests.rs

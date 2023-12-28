@@ -235,7 +235,7 @@ impl Board {
             match colours[index] {
                 Letter::Green => {
                     if self.contrast {
-                        to_print = format!("{}{} ", to_print, String::from(letter).truecolor(245, 121, 58));                        
+                        to_print = format!("{}{} ", to_print, String::from(letter).bright_magenta());                        
                     } else {
                         to_print = format!("{}{} ", to_print, String::from(letter).bright_green());
                     }
@@ -243,7 +243,7 @@ impl Board {
                 },
                 Letter::Yellow => {
                     if self.contrast {
-                        to_print = format!("{}{} ", to_print, String::from(letter).truecolor(133, 192, 249));
+                        to_print = format!("{}{} ", to_print, String::from(letter).bright_cyan());
                     } else {
                         to_print = format!("{}{} ", to_print, String::from(letter).bright_yellow());
                     }
@@ -687,16 +687,16 @@ impl Board {
             if line + 1 == self.turn && self.win { // print the "turn row" green, unless failed
                 if self.contrast {
                     write!(self.screen, "{}{}{bar} {count}{}",
-                    cursor::Goto(bar_col, graph_row + line as u16),
-                    color::Fg(color::Rgb(245, 121, 58)),
-                    color::Fg(color::Reset)
-                ).unwrap();
+                        cursor::Goto(bar_col, graph_row + line as u16),
+                        color::Fg(color::LightMagenta),
+                        color::Fg(color::Reset)
+                    ).unwrap();
                 } else {
                     write!(self.screen, "{}{}{bar} {count}{}",
-                    cursor::Goto(bar_col, graph_row + line as u16),
-                    color::Fg(color::LightGreen),
-                    color::Fg(color::Reset)
-                ).unwrap();
+                        cursor::Goto(bar_col, graph_row + line as u16),
+                        color::Fg(color::LightGreen),
+                        color::Fg(color::Reset)
+                    ).unwrap();
                 }
             } else {
                 write!(self.screen, "{}{bar} {count}",
@@ -787,14 +787,14 @@ impl Keyboard {
                 match self.guessed_letters.get(&chars) { // ... print it depending on its guess "status"
                     Some(Letter::Green) => {
                         if contrast {
-                            _buf = format!("{_buf}{} ", chars.to_string().truecolor(245, 121, 58));
+                            _buf = format!("{_buf}{} ", chars.to_string().bright_magenta());
                         } else {
                             _buf = format!("{_buf}{} ", chars.to_string().bright_green());
                         }
                     },
                     Some(Letter::Yellow) => {
                         if contrast {
-                            _buf = format!("{_buf}{} ", chars.to_string().truecolor(133, 192, 249));
+                            _buf = format!("{_buf}{} ", chars.to_string().bright_cyan());
                         } else {
                             _buf = format!("{_buf}{} ", chars.to_string().bright_yellow());
                         }
