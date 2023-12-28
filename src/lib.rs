@@ -798,7 +798,7 @@ impl Keyboard {
                         } else {
                             _buf = format!("{_buf}{} ", chars.to_string().bright_yellow());
                         }
-                    }
+                    },
                     Some(Letter::Grey) => _buf = format!("{_buf}{} ", chars.to_string().truecolor(10, 10, 10)),
                     None => _buf = format!("{_buf}{chars} "), // if that letter has not been guessed, print it normally
                 }
