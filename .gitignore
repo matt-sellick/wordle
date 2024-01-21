@@ -1,0 +1,5 @@
+/target
+/src/tests.rs
+wordle_answers.txt
+wordle_guesses.txt
+wordle_stats.txt
